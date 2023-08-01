@@ -1,3 +1,17 @@
+# Copyright 2020 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
 import os.path as osp
 import pickle
 import shutil
@@ -25,22 +39,15 @@ def single_gpu_test(model, data_loader):
     """
     model.eval()
     results = []
-    dataset = data_loader.dataset
-    prog_bar = mmcv.ProgressBar(len(dataset))
     for data in data_loader:
         with torch.no_grad():
             result = model(return_loss=False, **data)
         results.extend(result)
 
-        # Assume result has the same length of batch_size
-        # refer to https://github.com/open-mmlab/mmcv/issues/985
-        batch_size = len(result)
-        for _ in range(batch_size):
-            prog_bar.update()
     return results
 
 
-def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
+def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False, flag=False):
     """Test model with multiple gpus.
 
     This method tests model with multiple gpus and collects the results
@@ -55,36 +62,35 @@ def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
         tmpdir (str): Path of directory to save the temporary results from
             different gpus under cpu mode.
         gpu_collect (bool): Option to use either gpu or cpu to collect results.
-
+        flag (bool)
     Returns:
         list: The prediction results.
     """
     model.eval()
     results = []
+    times = []
     dataset = data_loader.dataset
     rank, world_size = get_dist_info()
-    if rank == 0:
-        prog_bar = mmcv.ProgressBar(len(dataset))
     time.sleep(2)  # This line can prevent deadlock problem in some cases.
     for i, data in enumerate(data_loader):
+        batch_size = data['imgs'].shape[0]
+        start = time.time()
         with torch.no_grad():
             result = model(return_loss=False, **data)
+        end = time.time()
         results.extend(result)
-
-        if rank == 0:
-            batch_size = len(result)
-            batch_size_all = batch_size * world_size
-            if batch_size_all + prog_bar.completed > len(dataset):
-                batch_size_all = len(dataset) - prog_bar.completed
-            for _ in range(batch_size_all):
-                prog_bar.update()
+        times.append(batch_size/(end - start))
 
     # collect results from all ranks
     if gpu_collect:
         results = collect_results_gpu(results, len(dataset))
     else:
         results = collect_results_cpu(results, len(dataset), tmpdir)
-    return results
+
+    if flag:
+        return results, times
+    else:
+        return results
 
 
 def collect_results_cpu(result_part, size, tmpdir=None):
@@ -112,16 +118,16 @@ def collect_results_cpu(result_part, size, tmpdir=None):
         # 32 is whitespace
         dir_tensor = torch.full((MAX_LEN, ),
                                 32,
-                                dtype=torch.uint8,
-                                device='cuda')
+                                dtype=torch.int16,
+                                device='npu')
         if rank == 0:
             mmcv.mkdir_or_exist('.dist_test')
             tmpdir = tempfile.mkdtemp(dir='.dist_test')
             tmpdir = torch.tensor(
-                bytearray(tmpdir.encode()), dtype=torch.uint8, device='cuda')
+                bytearray(tmpdir.encode()), dtype=torch.int16, device='npu')
             dir_tensor[:len(tmpdir)] = tmpdir
         dist.broadcast(dir_tensor, 0)
-        tmpdir = dir_tensor.cpu().numpy().tobytes().decode().rstrip()
+        tmpdir = dir_tensor.type(torch.uint8).cpu().numpy().tobytes().decode().rstrip()
     else:
         mmcv.mkdir_or_exist(tmpdir)
     # dump the part result to the dir

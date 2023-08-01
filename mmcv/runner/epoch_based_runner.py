@@ -1,4 +1,17 @@
-# Copyright (c) Open-MMLab. All rights reserved.
+# Copyright 2020 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
 import os.path as osp
 import platform
 import shutil
@@ -26,8 +39,7 @@ class EpochBasedRunner(BaseRunner):
             outputs = self.batch_processor(
                 self.model, data_batch, train_mode=train_mode, **kwargs)
         elif train_mode:
-            outputs = self.model.train_step(data_batch, self.optimizer,
-                                            **kwargs)
+            outputs = self.model.train_step(data_batch, self.optimizer, **kwargs)
         else:
             outputs = self.model.val_step(data_batch, self.optimizer, **kwargs)
         if not isinstance(outputs, dict):
@@ -45,11 +57,29 @@ class EpochBasedRunner(BaseRunner):
         self.call_hook('before_train_epoch')
         time.sleep(2)  # Prevent possible deadlock during epoch transition
         for i, data_batch in enumerate(self.data_loader):
-            self._inner_iter = i
-            self.call_hook('before_train_iter')
-            self.run_iter(data_batch, train_mode=True, **kwargs)
-            self.call_hook('after_train_iter')
-            self._iter += 1
+            if not self.distributed:
+                # with torch.autograd.profiler.profile(use_cuda=True) as prof:
+                #     self._inner_iter = i
+                #     self.batch_size = data_batch['label'].shape[0]
+                #     self.call_hook('before_train_iter')
+                #     self.run_iter(data_batch, train_mode=True, **kwargs)
+                #     self.call_hook('after_train_iter')
+                #     self._iter += 1
+                # #print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+                # prof.export_chrome_trace("./output.prof")
+                self._inner_iter = i
+                self.batch_size = data_batch['label'].shape[0]
+                self.call_hook('before_train_iter')
+                self.run_iter(data_batch, train_mode=True, **kwargs)
+                self.call_hook('after_train_iter')
+                self._iter += 1
+            else:
+                self._inner_iter = i
+                self.batch_size = data_batch['label'].shape[0]
+                self.call_hook('before_train_iter')
+                self.run_iter(data_batch, train_mode=True, **kwargs)
+                self.call_hook('after_train_iter')
+                self._iter += 1
 
         self.call_hook('after_train_epoch')
         self._epoch += 1

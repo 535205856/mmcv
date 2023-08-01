@@ -1,15 +1,33 @@
-# Copyright (c) Open-MMLab. All rights reserved.
+# Copyright 2020 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
 import copy
 from collections import defaultdict
 from distutils.version import LooseVersion
 from itertools import chain
 
 from torch.nn.utils import clip_grad
+from math import inf
 
 from mmcv.utils import TORCH_VERSION
 from ..dist_utils import allreduce_grads
 from ..fp16_utils import LossScaler, wrap_fp16_model
 from .hook import HOOKS, Hook
+import torch
+if torch.__version__ >= '1.8':
+    import torch_npu
+from apex import amp
 
 try:
     # If PyTorch version >= 1.6.0, torch.cuda.amp.GradScaler would be imported
@@ -17,6 +35,39 @@ try:
     from torch.cuda.amp import GradScaler
 except ImportError:
     pass
+
+
+def clip_grad_norm_(parameters, max_norm, norm_type=2):
+    r"""Clips gradient norm of an iterable of parameters.
+
+    The norm is computed over all gradients together, as if they were
+    concatenated into a single vector. Gradients are modified in-place.
+
+    Arguments:
+        parameters (Iterable[Tensor] or Tensor): an iterable of Tensors or a
+            single Tensor that will have gradients normalized
+        max_norm (float or int): max norm of the gradients
+        norm_type (float or int): type of the used p-norm. Can be ``'inf'`` for
+            infinity norm.
+
+    Returns:
+        Total norm of the parameters (viewed as a single vector).
+    """
+    if isinstance(parameters, torch.Tensor):
+        parameters = [parameters]
+    parameters = list(filter(lambda p: p.grad is not None, parameters))
+    max_norm = float(max_norm)
+    norm_type = float(norm_type)
+    if norm_type == inf:
+        total_norm = max(p.grad.detach().abs().max() for p in parameters)
+    else:
+        total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach().float(), norm_type) for p in parameters]), norm_type)
+    clip_coef = max_norm / (total_norm + 1e-6)
+    clip_coef = torch_npu.npu_format_cast(clip_coef, 2)
+    if clip_coef < 1:
+        for p in parameters:
+            p.grad.detach().mul_(clip_coef)
+    return total_norm
 
 
 @HOOKS.register_module()
@@ -29,17 +80,19 @@ class OptimizerHook(Hook):
         params = list(
             filter(lambda p: p.requires_grad and p.grad is not None, params))
         if len(params) > 0:
-            return clip_grad.clip_grad_norm_(params, **self.grad_clip)
+            return clip_grad_norm_(params, **self.grad_clip)
 
     def after_train_iter(self, runner):
         runner.optimizer.zero_grad()
-        runner.outputs['loss'].backward()
-        if self.grad_clip is not None:
-            grad_norm = self.clip_grads(runner.model.parameters())
-            if grad_norm is not None:
-                # Add grad norm to the logger
-                runner.log_buffer.update({'grad_norm': float(grad_norm)},
-                                         runner.outputs['num_samples'])
+        with amp.scale_loss(runner.outputs['loss'], runner.optimizer) as scaled_loss:
+            scaled_loss.backward()
+        # runner.outputs['loss'].backward()
+        # if self.grad_clip is not None:
+        #     grad_norm = self.clip_grads(runner.model.parameters())
+        #     if grad_norm is not None:
+        #         # Add grad norm to the logger
+        #         runner.log_buffer.update({'grad_norm': float(grad_norm)},
+        #                                  runner.outputs['num_samples'])
         runner.optimizer.step()
 
 
