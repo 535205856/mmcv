@@ -1,0 +1,37 @@
+
+
+
+
+---------------1.2.7
+
+
+cp -f mmcv_need/_functions.py ../mmcv/mmcv/parallel/
+cp -f mmcv_need/builder.py ../mmcv/mmcv/runner/optimizer/
+cp -f mmcv_need/data_parallel.py ../mmcv/mmcv/parallel/
+cp -f mmcv_need/dist_utils.py ../mmcv/mmcv/runner/
+cp -f mmcv_need/distributed.py ../mmcv/mmcv/parallel/
+cp -f mmcv_need/optimizer.py ../mmcv/mmcv/runner/hooks/
+
+3. 以下三个文件的替换是为了在log中打印出FPS的信息-----------但是实际上是适配1.3.9版本的和1.2.7不匹配，因此不能替换，后期有时间自己改
+
+cp -f ./mmcv_need/iter_timer.py ../mmcv/mmcv/runner/hooks/
+cp -f ./mmcv_need/base_runner.py ../mmcv/mmcv/runner/
+cp -f ./mmcv_need/epoch_based_runner.py ../mmcv/mmcv/runner/
+
+---------------1.3.9
+
+
+cp -f mmcv_need/_functions.py ./mmcv/mmcv/parallel/_functions.py
+cp -f mmcv_need/base_runner.py mmcv/runner/base_runner.py
+cp -f mmcv_need/builder.py mmcv/runner/optimizer/builder.py
+cp -f mmcv_need/checkpoint.py mmcv/runner/hooks/checkpoint.py
+cp -f mmcv_need/data_parallel.py mmcv/parallel/data_parallel.py
+cp -f mmcv_need/dist_utils.py mmcv/runner/dist_utils.py
+cp -f mmcv_need/distributed.py mmcv/parallel/distributed.py
+cp -f mmcv_need/epoch_based_runner.py mmcv/runner/epoch_based_runner.py
+cp -f mmcv_need/iter_timer.py mmcv/runner/hooks/iter_timer.py
+cp -f mmcv_need/optimizer.py mmcv/runner/hooks/optimizer.py
+cp -f mmcv_need/test.py mmcv/engine/test.py
+cp -f mmcv_need/transformer.py mmcv/cnn/bricks/transformer.py
+cp -f mmcv_need/registry.py mmcv/utils/registry.py
+
