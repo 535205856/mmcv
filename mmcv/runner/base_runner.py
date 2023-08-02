@@ -57,7 +57,7 @@ class BaseRunner(metaclass=ABCMeta):
                  meta=None,
                  max_iters=None,
                  max_epochs=None):
-        batch_size = 1
+        self.batch_size = 1
         if batch_processor is not None:
             if not callable(batch_processor):
                 raise TypeError('batch_processor must be callable, '

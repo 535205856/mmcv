@@ -178,7 +178,7 @@ class Runner(EpochBasedRunner):
     """Deprecated name of EpochBasedRunner."""
 
     def __init__(self, *args, **kwargs):
-        batch_size = 1
+        self.batch_size = 1
         warnings.warn(
             'Runner was deprecated, please use EpochBasedRunner instead')
         super().__init__(*args, **kwargs)
