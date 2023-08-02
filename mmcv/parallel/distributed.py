@@ -1,4 +1,19 @@
-# Copyright (c) Open-MMLab. All rights reserved.
+# Copyright 2020 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
+from distutils.version import LooseVersion
+
 import torch
 from torch.nn.parallel.distributed import (DistributedDataParallel,
                                            _find_tensors)
@@ -6,6 +21,9 @@ from torch.nn.parallel.distributed import (DistributedDataParallel,
 from mmcv import print_log
 from mmcv.utils import TORCH_VERSION
 from .scatter_gather import scatter_kwargs
+
+TORCH_MAJOR = int(torch.__version__.split('.')[0])
+TORCH_MINOR = int(torch.__version__.split('.')[1])
 
 
 class MMDistributedDataParallel(DistributedDataParallel):
@@ -17,6 +35,11 @@ class MMDistributedDataParallel(DistributedDataParallel):
       flexible control of input data.
     - It implement two APIs ``train_step()`` and ``val_step()``.
     """
+
+    def to_kwargs(self, inputs, kwargs, device_id):
+        # Use `self.to_kwargs` instead of `self.scatter` in pytorch1.8
+        # to move all tensors to device_id
+        return scatter_kwargs(inputs, kwargs, [device_id], dim=self.dim)
 
     def scatter(self, inputs, kwargs, device_ids):
         return scatter_kwargs(inputs, kwargs, device_ids, dim=self.dim)
@@ -32,15 +55,18 @@ class MMDistributedDataParallel(DistributedDataParallel):
 
         # In PyTorch >= 1.7, ``reducer._rebuild_buckets()`` is moved from the
         # end of backward to the beginning of forward.
-        if (TORCH_VERSION >= '1.7' and 'parrots'
+        if (LooseVersion(TORCH_VERSION) >= LooseVersion('1.7') and 'parrots'
                 not in TORCH_VERSION) and self.reducer._rebuild_buckets():
             print_log(
                 'Reducer buckets have been rebuilt in this iteration.',
                 logger='mmcv')
 
         if getattr(self, 'require_forward_param_sync', True):
-            self._sync_params()
-        if self.device_ids:
+            if TORCH_MAJOR == 1 and TORCH_MINOR <= 8:
+                self._sync_params()
+            else:
+                self._sync_params_and_buffers()
+        if self.device_ids and False:
             inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
             if len(self.device_ids) == 1:
                 output = self.module.train_step(*inputs[0], **kwargs[0])
@@ -49,7 +75,8 @@ class MMDistributedDataParallel(DistributedDataParallel):
                     self._module_copies[:len(inputs)], inputs, kwargs)
                 output = self.gather(outputs, self.output_device)
         else:
-            output = self.module.train_step(*inputs, **kwargs)
+            inputs, kwargs = self.scatter(inputs, kwargs, [-1])
+            output = self.module.train_step(*inputs[0], **kwargs[0])
 
         if torch.is_grad_enabled() and getattr(
                 self, 'require_backward_grad_sync', True):
@@ -58,7 +85,7 @@ class MMDistributedDataParallel(DistributedDataParallel):
             else:
                 self.reducer.prepare_for_backward([])
         else:
-            if TORCH_VERSION > '1.2':
+            if LooseVersion(TORCH_VERSION) > LooseVersion('1.2'):
                 self.require_forward_param_sync = False
         return output
 
@@ -72,14 +99,17 @@ class MMDistributedDataParallel(DistributedDataParallel):
         """
         # In PyTorch >= 1.7, ``reducer._rebuild_buckets()`` is moved from the
         # end of backward to the beginning of forward.
-        if (TORCH_VERSION >= '1.7' and 'parrots'
+        if (LooseVersion(TORCH_VERSION) >= LooseVersion('1.7') and 'parrots'
                 not in TORCH_VERSION) and self.reducer._rebuild_buckets():
             print_log(
                 'Reducer buckets have been rebuilt in this iteration.',
                 logger='mmcv')
 
         if getattr(self, 'require_forward_param_sync', True):
-            self._sync_params()
+            if TORCH_MAJOR == 1 and TORCH_MINOR <= 8:
+                self._sync_params()
+            else:
+                self._sync_params_and_buffers()
         if self.device_ids:
             inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
             if len(self.device_ids) == 1:
@@ -98,6 +128,6 @@ class MMDistributedDataParallel(DistributedDataParallel):
             else:
                 self.reducer.prepare_for_backward([])
         else:
-            if TORCH_VERSION > '1.2':
+            if LooseVersion(TORCH_VERSION) > LooseVersion('1.2'):
                 self.require_forward_param_sync = False
         return output

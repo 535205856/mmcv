@@ -1,8 +1,22 @@
-# Copyright (c) Open-MMLab. All rights reserved.
+# Copyright 2020 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
 import functools
 import os
 import subprocess
 from collections import OrderedDict
+from distutils.version import LooseVersion
 
 import torch
 import torch.multiprocessing as mp
@@ -29,8 +43,9 @@ def init_dist(launcher, backend='nccl', **kwargs):
 def _init_dist_pytorch(backend, **kwargs):
     # TODO: use local_rank instead of rank % num_gpus
     rank = int(os.environ['RANK'])
-    num_gpus = torch.cuda.device_count()
-    torch.cuda.set_device(rank % num_gpus)
+    offset = 0 if os.getenv('NPUID', None) is None else int(os.environ['NPUID'])
+    num_gpus = torch.npu.device_count()
+    torch.npu.set_device((rank + offset) % num_gpus)
     dist.init_process_group(backend=backend, **kwargs)
 
 
@@ -78,7 +93,7 @@ def _init_dist_slurm(backend, port=None):
 
 
 def get_dist_info():
-    if TORCH_VERSION < '1.0':
+    if LooseVersion(TORCH_VERSION) < LooseVersion('1.0'):
         initialized = dist._initialized
     else:
         if dist.is_available():
