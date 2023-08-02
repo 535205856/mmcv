@@ -27,8 +27,5 @@ class IterTimerHook(Hook):
         runner.log_buffer.update({'data_time': time.time() - self.t})
 
     def after_iter(self, runner):
-        if runner.distributed:
-            runner.log_buffer.update({'time': time.time() - self.t, 'fps': runner.batch_size * 8 / (time.time() - self.t)})
-        else:
-            runner.log_buffer.update({'time': time.time() - self.t, 'fps': runner.batch_size / (time.time() - self.t)})
+        runner.log_buffer.update({'time': time.time() - self.t, 'fps': runner.batch_size / (time.time() - self.t)})
         self.t = time.time()

@@ -48,6 +48,7 @@ class EpochBasedRunner(BaseRunner):
             self._inner_iter = i
             self.call_hook('before_train_iter')
             self.run_iter(data_batch, train_mode=True)
+            self.batch_size = data_batch['label'].shape[0]
             self.call_hook('after_train_iter')
             self._iter += 1
 
