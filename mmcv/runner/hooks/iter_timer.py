@@ -35,7 +35,8 @@ class IterTimerHook(Hook):
     def after_iter(self, runner):
         # runner.log_buffer.update({'time': time.time() - self.t})  # annoated by jyl
         cur_time = time.time()  # added by jyl
-        runner.log_buffer.update({'time': cur_time - self.t})  # added by jyl
+        # runner.log_buffer.update({'time': cur_time - self.t})  # added by jyl
+        runner.log_buffer.update({'time': cur_time - self.t, 'fps': runner.batch_size / (cur_time - self.t)})
         if self.skip_step >= 5:  # added by jyl
             self.time_all += cur_time - self.t  # added by jyl
         self.skip_step += 1  # added by jyl

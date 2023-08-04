@@ -95,6 +95,7 @@ class EpochBasedRunner(BaseRunner):
             if i > self._max_iters:
                 break
             self._inner_iter = i
+            self.batch_size = data_batch['label'].shape[0]
             profile.start()
             self.call_hook('before_train_iter')
             self.run_iter(data_batch, train_mode=True)
@@ -230,6 +231,7 @@ class Runner(EpochBasedRunner):
     """Deprecated name of EpochBasedRunner."""
 
     def __init__(self, *args, **kwargs):
+        self.batch_size = 1
         warnings.warn(
             'Runner was deprecated, please use EpochBasedRunner instead')
         super().__init__(*args, **kwargs)
