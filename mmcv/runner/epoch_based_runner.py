@@ -1,9 +1,42 @@
-# Copyright (c) Open-MMLab. All rights reserved.
+# BSD 3-Clause License
+#
+# Copyright (c) 2017 xxxx
+# All rights reserved.
+# Copyright 2021 Huawei Technologies Co., Ltd
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+#
+# * Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+#
+# * Neither the name of the copyright holder nor the names of its
+#   contributors may be used to endorse or promote products derived from
+#   this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ============================================================================
+
+import os
 import os.path as osp
 import platform
 import shutil
 import time
 import warnings
+import sys # myy add
 
 import torch
 
@@ -12,6 +45,19 @@ from .base_runner import BaseRunner
 from .builder import RUNNERS
 from .checkpoint import save_checkpoint
 from .utils import get_host_info
+try:
+    from torch_npu.utils.profiler import Profile
+except ImportError:
+    print("Profile not in torch_npu.utils.profiler now.. Auto Profile disabled.", flush=True)
+    class Profile:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def end(self):
+            pass
 
 
 @RUNNERS.register_module()
@@ -41,21 +87,25 @@ class EpochBasedRunner(BaseRunner):
         self.model.train()
         self.mode = 'train'
         self.data_loader = data_loader
-        self._max_iters = self._max_epochs * len(self.data_loader)
         self.call_hook('before_train_epoch')
         time.sleep(2)  # Prevent possible deadlock during epoch transition
+        profile = Profile(start_step=int(os.getenv('PROFILE_START_STEP', 10)),
+                          profile_type=os.getenv('PROFILE_TYPE'))
         for i, data_batch in enumerate(self.data_loader):
+            if i > self._max_iters:
+                break
             self._inner_iter = i
-            self.batch_size = data_batch['label'].shape[0]
+            profile.start()
             self.call_hook('before_train_iter')
             self.run_iter(data_batch, train_mode=True)
             self.call_hook('after_train_iter')
+            profile.end()
             self._iter += 1
-
+        # added by jyl
+        self.logger.info('FPS: ' + str(self.samples_per_gpu * self.num_of_gpus / self.iter_timer_hook.time_all * (self._max_iters - 5))) 
         self.call_hook('after_train_epoch')
         self._epoch += 1
 
-    @torch.no_grad()
     def val(self, data_loader, **kwargs):
         self.model.eval()
         self.mode = 'val'
@@ -65,7 +115,8 @@ class EpochBasedRunner(BaseRunner):
         for i, data_batch in enumerate(self.data_loader):
             self._inner_iter = i
             self.call_hook('before_val_iter')
-            self.run_iter(data_batch, train_mode=False)
+            with torch.no_grad():
+                self.run_iter(data_batch, train_mode=False)
             self.call_hook('after_val_iter')
 
         self.call_hook('after_val_epoch')
@@ -96,7 +147,8 @@ class EpochBasedRunner(BaseRunner):
         for i, flow in enumerate(workflow):
             mode, epochs = flow
             if mode == 'train':
-                self._max_iters = self._max_epochs * len(data_loaders[i])
+                if not self._max_iters:
+                    self._max_iters = self._max_epochs * len(data_loaders[i])
                 break
 
         work_dir = self.work_dir if self.work_dir is not None else 'NONE'
@@ -178,7 +230,6 @@ class Runner(EpochBasedRunner):
     """Deprecated name of EpochBasedRunner."""
 
     def __init__(self, *args, **kwargs):
-        self.batch_size = 1
         warnings.warn(
             'Runner was deprecated, please use EpochBasedRunner instead')
         super().__init__(*args, **kwargs)

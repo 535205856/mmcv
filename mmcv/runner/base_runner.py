@@ -1,5 +1,34 @@
-# Copyright (c) Open-MMLab. All rights reserved.
-import copy
+# BSD 3-Clause License
+#
+# Copyright (c) 2017 xxxx
+# All rights reserved.
+# Copyright 2021 Huawei Technologies Co., Ltd
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+#
+# * Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+#
+# * Neither the name of the copyright holder nor the names of its
+#   contributors may be used to endorse or promote products derived from
+#   this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# ============================================================================
 import logging
 import os.path as osp
 import warnings
@@ -12,7 +41,7 @@ import mmcv
 from ..parallel import is_module_wrapper
 from .checkpoint import load_checkpoint
 from .dist_utils import get_dist_info
-from .hooks import HOOKS, Hook
+from .hooks import HOOKS, Hook, IterTimerHook
 from .log_buffer import LogBuffer
 from .priority import get_priority
 from .utils import get_time_str
@@ -56,8 +85,9 @@ class BaseRunner(metaclass=ABCMeta):
                  logger=None,
                  meta=None,
                  max_iters=None,
-                 max_epochs=None):
-        self.batch_size = 1
+                 max_epochs=None,
+                 samples_per_gpu=2,  # added by jyl 
+                 num_of_gpus=8):  # added by jyl  
         if batch_processor is not None:
             if not callable(batch_processor):
                 raise TypeError('batch_processor must be callable, '
@@ -104,6 +134,8 @@ class BaseRunner(metaclass=ABCMeta):
         self.optimizer = optimizer
         self.logger = logger
         self.meta = meta
+        self.samples_per_gpu = samples_per_gpu  # added by jyl
+        self.num_of_gpus = num_of_gpus  # added by jyl
 
         # create work_dir
         if mmcv.is_str(work_dir):
@@ -136,6 +168,8 @@ class BaseRunner(metaclass=ABCMeta):
         self._max_iters = max_iters
         # TODO: Redesign LogBuffer, it is not flexible and elegant enough
         self.log_buffer = LogBuffer()
+
+        self.iter_timer_hook = IterTimerHook()    # added by jyl
 
     @property
     def model_name(self):
@@ -346,9 +380,7 @@ class BaseRunner(metaclass=ABCMeta):
         self.logger.info('resumed epoch %d, iter %d', self.epoch, self.iter)
 
     def register_lr_hook(self, lr_config):
-        if lr_config is None:
-            return
-        elif isinstance(lr_config, dict):
+        if isinstance(lr_config, dict):
             assert 'policy' in lr_config
             policy_type = lr_config.pop('policy')
             # If the type of policy is all in lower case, e.g., 'cyclic',
@@ -416,23 +448,12 @@ class BaseRunner(metaclass=ABCMeta):
                 info, HOOKS, default_args=dict(interval=log_interval))
             self.register_hook(logger_hook, priority='VERY_LOW')
 
-    def register_timer_hook(self, timer_config):
-        if timer_config is None:
-            return
-        if isinstance(timer_config, dict):
-            timer_config_ = copy.deepcopy(timer_config)
-            hook = mmcv.build_from_cfg(timer_config_, HOOKS)
-        else:
-            hook = timer_config
-        self.register_hook(hook)
-
     def register_training_hooks(self,
                                 lr_config,
                                 optimizer_config=None,
                                 checkpoint_config=None,
                                 log_config=None,
-                                momentum_config=None,
-                                timer_config=dict(type='IterTimerHook')):
+                                momentum_config=None):
         """Register default hooks for training.
 
         Default hooks include:
@@ -448,5 +469,6 @@ class BaseRunner(metaclass=ABCMeta):
         self.register_momentum_hook(momentum_config)
         self.register_optimizer_hook(optimizer_config)
         self.register_checkpoint_hook(checkpoint_config)
-        self.register_timer_hook(timer_config)
+        # self.register_hook(IterTimerHook())  # changed by jyl 
+        self.register_hook(self.iter_timer_hook)  
         self.register_logger_hooks(log_config)

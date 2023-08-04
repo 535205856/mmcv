@@ -1,10 +1,14 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# BSD 3-Clause License
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Copyright (c) 2017 xxxx
+# All rights reserved.
+# Copyright 2021 Huawei Technologies Co., Ltd
 #
-# http://www.apache.org/licenses/LICENSE-2.0
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,11 +26,17 @@ class IterTimerHook(Hook):
 
     def before_epoch(self, runner):
         self.t = time.time()
+        self.skip_step = 0  # added by jyl
+        self.time_all = 0  # added by jyl
 
     def before_iter(self, runner):
         runner.log_buffer.update({'data_time': time.time() - self.t})
 
     def after_iter(self, runner):
-        # runner.log_buffer.update({'time': time.time() - self.t, 'fps': runner.batch_size / (time.time() - self.t)})
-        runner.log_buffer.update({'time': time.time() - self.t})
+        # runner.log_buffer.update({'time': time.time() - self.t})  # annoated by jyl
+        cur_time = time.time()  # added by jyl
+        runner.log_buffer.update({'time': cur_time - self.t})  # added by jyl
+        if self.skip_step >= 5:  # added by jyl
+            self.time_all += cur_time - self.t  # added by jyl
+        self.skip_step += 1  # added by jyl
         self.t = time.time()
