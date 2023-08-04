@@ -95,8 +95,10 @@ class EpochBasedRunner(BaseRunner):
             if i > self._max_iters:
                 break
             self._inner_iter = i
-            self.batch_size = data_batch['label'].shape[0]
-            print("---------------epoch_base_runner train() -> data_batch['label'].shape[0] is {}".format(self.batch_size ))
+            print("---------------epoch_base_runner train() -> data_batch['label'] is {}".format(data_batch['label']))
+            print("---------------epoch_base_runner train() -> data_batch is {}".format(data_batch))
+            self.batch_size = len(data_batch['label'])
+            # print("---------------epoch_base_runner train() -> data_batch['label'].shape[0] is {}".format(self.batch_size ))
             profile.start()
             self.call_hook('before_train_iter')
             self.run_iter(data_batch, train_mode=True)
