@@ -88,7 +88,8 @@ class BaseRunner(metaclass=ABCMeta):
                  max_epochs=None,
                  samples_per_gpu=2,  # added by jyl 
                  num_of_gpus=8):  # added by jyl
-        self.batch_size = 1
+        self.batch_size = samples_per_gpu
+        print("--------------BaseRunner self.batch_size = samples_per_gpu is {}".format(samples_per_gpu))
         if batch_processor is not None:
             if not callable(batch_processor):
                 raise TypeError('batch_processor must be callable, '
