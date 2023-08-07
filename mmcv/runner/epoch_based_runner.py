@@ -89,26 +89,21 @@ class EpochBasedRunner(BaseRunner):
         self.data_loader = data_loader
         self.call_hook('before_train_epoch')
         time.sleep(2)  # Prevent possible deadlock during epoch transition
-        profile = Profile(start_step=int(os.getenv('PROFILE_START_STEP', 10)),
-                          profile_type=os.getenv('PROFILE_TYPE'))
+
         for i, data_batch in enumerate(self.data_loader):
             if i > self._max_iters:
                 break
             self._inner_iter = i
             print("---------------epoch_base_runner train() -> data_batch['label'] is {}".format(data_batch['label']))
             print("---------------epoch_base_runner train() -> data_batch is {}".format(data_batch))
+            print("---------------epoch_base_runner train() -> batch_size is {}".format(self.batch_size))
             self.logger.info("---------------epoch_base_runner train() -> data_batch['label'] is {}".format(data_batch['label']))
             self.logger.info("---------------epoch_base_runner train() -> data_batch is {}".format(data_batch))
-            self.batch_size = len(data_batch['label'])
-            # 临时退出
-            if i > 1:
-                break
+            # self.batch_size = len(data_batch['label'])
             # print("---------------epoch_base_runner train() -> data_batch['label'].shape[0] is {}".format(self.batch_size ))
-            profile.start()
             self.call_hook('before_train_iter')
             self.run_iter(data_batch, train_mode=True)
             self.call_hook('after_train_iter')
-            profile.end()
             self._iter += 1
         # added by jyl
         self.logger.info('FPS: ' + str(self.samples_per_gpu * self.num_of_gpus / self.iter_timer_hook.time_all * (self._max_iters - 5))) 
