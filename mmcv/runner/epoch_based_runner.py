@@ -97,7 +97,12 @@ class EpochBasedRunner(BaseRunner):
             self._inner_iter = i
             print("---------------epoch_base_runner train() -> data_batch['label'] is {}".format(data_batch['label']))
             print("---------------epoch_base_runner train() -> data_batch is {}".format(data_batch))
+            self.logger.info("---------------epoch_base_runner train() -> data_batch['label'] is {}".format(data_batch['label']))
+            self.logger.info("---------------epoch_base_runner train() -> data_batch is {}".format(data_batch))
             self.batch_size = len(data_batch['label'])
+            # 临时退出
+            if i > 1:
+                break
             # print("---------------epoch_base_runner train() -> data_batch['label'].shape[0] is {}".format(self.batch_size ))
             profile.start()
             self.call_hook('before_train_iter')
@@ -118,6 +123,8 @@ class EpochBasedRunner(BaseRunner):
         time.sleep(2)  # Prevent possible deadlock during epoch transition
         for i, data_batch in enumerate(self.data_loader):
             self._inner_iter = i
+            print("---------------epoch_base_runner val() -> data_batch['label'] is {}".format(data_batch['label']))
+            print("---------------epoch_base_runner val() -> data_batch is {}".format(data_batch))
             self.call_hook('before_val_iter')
             with torch.no_grad():
                 self.run_iter(data_batch, train_mode=False)
